@@ -1,120 +1,94 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
 from sklearn.linear_model import LinearRegression
-from sklearn.svm import SVR
-from sklearn.tree import DecisionTreeRegressor
-from sklearn.ensemble import RandomForestRegressor
 from sklearn.neighbors import KNeighborsRegressor
 from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import StandardScaler,LabelEncoder
+from sklearn.preprocessing import LabelEncoder
+import matplotlib.pyplot as plt
 
 st.title("PredictBoard")
 
 upfile = st.file_uploader("Upload CSV", type=["csv"])
 
 if upfile is not None:
-
     df = pd.read_csv(upfile)
+    st.write("Preview:", df.head())
 
-    st.write("Preview :", df.head())
+    if df.isnull().values.any():
+        st.warning("Warning: The dataset contains missing values. Handle them before proceeding.")
 
     st.sidebar.header("Handle Null Values")
 
-    drop_columns = st.sidebar.multiselect("Select Columns to Drop if They Contain Nulls",options=df.columns.tolist())
-
-    if drop_columns:
+    drop_columns = st.sidebar.multiselect("Drop Columns with Nulls", ["All Columns"] + df.columns.tolist())
+    if "All Columns" in drop_columns:
+        df = df.dropna(axis=1)
+    elif drop_columns:
         df = df.drop(columns=drop_columns)
 
-    fill_columns = st.sidebar.multiselect("Select Columns to Fill Nulls",options=df.columns.tolist())
-
-    fill_strategy = st.sidebar.selectbox("Choose Fill Strategy for Selected Columns",["None", "Fill with Mean", "Fill with Median", "Fill with Mode"])
-
+    fill_columns = st.sidebar.multiselect("Fill Null Columns", ["All Columns"] + df.columns.tolist())
+    fill_strategy = st.sidebar.selectbox("Fill Strategy", ["None", "Mean", "Median", "Mode"])
+    
     if fill_columns and fill_strategy != "None":
-        if fill_strategy == "Fill with Mean":
+        if "All Columns" in fill_columns:
+            fill_columns = df.columns.tolist()
+        if fill_strategy == "Mean":
             df[fill_columns] = df[fill_columns].fillna(df[fill_columns].mean())
-        elif fill_strategy == "Fill with Median":
+        elif fill_strategy == "Median":
             df[fill_columns] = df[fill_columns].fillna(df[fill_columns].median())
-        elif fill_strategy == "Fill with Mode":
+        elif fill_strategy == "Mode":
             df[fill_columns] = df[fill_columns].fillna(df[fill_columns].mode().iloc[0])
 
+    x_col = st.selectbox("Select X (Independent Variable)", df.columns.tolist())
+    y_col = st.selectbox("Select Y (Dependent Variable)", df.columns.tolist())
 
-    label_encode_columns = st.sidebar.multiselect(
-        "Select Columns to Apply Label Encoding",
-        options=df.select_dtypes(include=['object']).columns.tolist())
+    x_encode_option = st.selectbox("Encode X?", ["No Encoding", "Label Encoding", "One-Hot Encoding"])
+    y_encode_option = st.selectbox("Encode Y?", ["No Encoding", "Label Encoding"])
 
-    if label_encode_columns:
-        label_encoder = LabelEncoder()
-        for col in label_encode_columns:
-            df[col] = label_encoder.fit_transform(df[col])
+    if x_encode_option == "Label Encoding":
+        df[x_col] = LabelEncoder().fit_transform(df[x_col])
 
-    st.write("Updated Data :", df)
+    if y_encode_option == "Label Encoding":
+        df[y_col] = LabelEncoder().fit_transform(df[y_col])
 
-    if df.empty:
-        st.error("Please upload another csv")
-    else:
-        column_options = df.columns.tolist()
-        x_col = st.selectbox("Select X (Independent Variable)[numeric]", column_options)
-        y_col = st.selectbox("Select Y (Dependent Variable)[numeric]", column_options)
+    st.write("Data after encoding (if any):", df.head())
 
-        modelchoice = st.selectbox("Choose Regression Model",
-                                    ["Linear Regression", "SVM Regression",
-                                     "KNN Regression", "Decision Tree Regression",
-                                     "Random Forest Regression"])
+    model = None
+    y_pred = None
 
-        newval = st.number_input(f"Input a new value for {x_col} to predict {y_col}", value=0.0)
+    model_choice = st.selectbox("Choose Model", ["Linear Regression", "KNN Regression"])
+    new_val = st.number_input(f"Input a value for {x_col} to predict {y_col}", value=0.0)
 
-        if st.button("Perform Regression"):
-            X = df[[x_col]]
-            y = df[y_col]
+    X = df[[x_col]]
+    y = df[y_col]
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
-            X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+    if st.button("Perform Regression"):
+        model = LinearRegression() if model_choice == "Linear Regression" else KNeighborsRegressor(n_neighbors=5)
+        model.fit(X_train, y_train)
+        y_pred = model.predict(X_test)
 
-            if modelchoice in ["SVM Regression", "KNN Regression"]:
-                scaler = StandardScaler()
-                X_train_scaled = scaler.fit_transform(X_train)
-                X_test_scaled = scaler.transform(X_test)
-                newvalscaled = scaler.transform(np.array([[newval]]))
-            else:
-                X_train_scaled = X_train
-                X_test_scaled = X_test
-                newvalscaled = np.array([[newval]])
+        predicted_value = model.predict([[new_val]])[0]
+        st.success(f"{model_choice} completed! Predicted {y_col} for {x_col} = {predicted_value:.2f}")
 
-            if modelchoice == "Linear Regression":
-                model = LinearRegression()
 
-            elif modelchoice == "SVM Regression":
-                model = SVR(kernel='rbf')
+        accuracy = np.mean(np.round(y_pred) == y_test)
+        st.write(f"Accuracy: {accuracy * 100:.2f}%")
 
-            elif modelchoice == "KNN Regression":
-                model = KNeighborsRegressor(n_neighbors=5)
+        plt.figure(figsize=(10, 6))
 
-            elif modelchoice == "Decision Tree Regression":
-                model = DecisionTreeRegressor()
-
-            elif modelchoice == "Random Forest Regression":
-                model = RandomForestRegressor(n_estimators=100, random_state=42)
-
-            model.fit(X_train_scaled, y_train)
-
-            y_pred = model.predict(X_test_scaled)
-
-            score = model.score(X_test_scaled, y_test)
-            st.write(f"R-squared (Accuracy): {score}")
-            prediction = model.predict(newvalscaled)
-            st.write(f"Predicted {y_col} for {x_col} = {newval}: {prediction[0]}")
-
-            plt.figure(figsize=(8, 6))
+        if model_choice == "Linear Regression":
             plt.scatter(X_test, y_test, color="blue", label="Actual Data")
+            plt.plot(X_test, y_pred, color="red", label="Regression Line")
+            plt.title(f"Linear Regression: {y_col} vs {x_col}")
 
-            if modelchoice in ["Linear Regression", "SVM Regression"]:
-                plt.plot(X_test, y_pred, color="red", label="Regression Line")
-            else:
-                plt.scatter(X_test, y_pred, color="green", label="Predicted Data")
 
-            plt.xlabel(x_col)
-            plt.ylabel(y_col)
-            plt.title(f"{modelchoice} between {x_col} and {y_col}")
-            plt.legend()
-            st.pyplot(plt)
+        elif model_choice == "KNN Regression":
+            plt.scatter(X_test, y_test, color="blue", label="Actual Data")
+            plt.scatter(X_test, y_pred, color="green", label="Predicted Data", alpha=0.5)
+            plt.title(f"KNN Regression: {y_col} vs {x_col}")
+
+        plt.xlabel(x_col)
+        plt.ylabel(y_col)
+        plt.legend()
+        st.pyplot(plt)
