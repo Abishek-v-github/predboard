@@ -86,7 +86,7 @@ if upfile is not None:
         elif model_choice == "KNN Regression":
             plt.scatter(X_test, y_test, color="blue", label="Actual Data")
             plt.scatter(X_test, y_pred, color="green", label="Predicted Data", alpha=0.5)
-            plt.title(f"KNN Regression: {y_col} vs {x_col}")
+            plt.title(f"KNN modelll: {y_col} vs {x_col}")
 
         plt.xlabel(x_col)
         plt.ylabel(y_col)
